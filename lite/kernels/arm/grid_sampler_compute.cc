@@ -35,12 +35,18 @@ void GridSamplerCompute::Run() {
   auto c = param.x->dims()[1];
   auto h = param.x->dims()[2];
   auto w = param.x->dims()[3];
+  auto out_h = param.grid->dims()[1];
+  auto out_w = param.grid->dims()[2];
+
   const float* in = param.x->data<float>();
   const float* grid = param.grid->data<float>();
   float* out = param.out->mutable_data<float>();
   auto& ctx = this->ctx_->template As<ARMContext>();
-  const size_t coor_size = n * h * w;
-  const size_t workspace_size = coor_size * 12 * sizeof(float);
+  // First, we need to know how much space we need, 
+  //  which depends on the grid size  
+  const size_t coor_size = n * out_h * out_w;
+  // The space size required for coor_p, dis_p, and bound_p 
+  const size_t workspace_size = coor_size * 4 * 3 * sizeof(float);
   memset(out, 0, param.out->numel() * sizeof(float));
 
   ctx.ExtendWorkspace(workspace_size);
@@ -264,23 +270,31 @@ void GridSamplerCompute::Run() {
   }
 
   if (mode == "bilinear") {
+    // cube_size is used for switching in_n to the next batch
     size_t cube_size = c * h * w;
+    // out_cube_size用于out_n切换到下一个batch
+    size_t out_cube_size = c * out_h * out_w;
     size_t spatial_size = h * w;
+    size_t out_spatial_size = out_h * out_w;
+
     // compute output
     for (int i = 0; i < n; ++i) {
       const float* in_n = in + i * cube_size;
-      float* out_n = out + i * cube_size;
-      int32_t* coor_n = ctx.workspace_data<int>() + i * spatial_size * 4;
+      float* out_n = out + i * out_cube_size;
+      int32_t* coor_n = ctx.workspace_data<int>() + i * out_spatial_size * 4;
+      // Based on the address of coor_n, skipping the space size of coor 
+      //  gives the pointer address of dis_n, and similarly for bound_n
       float* dis_n = reinterpret_cast<float*>(coor_n) + coor_size * 4;
       uint32_t* bound_n = reinterpret_cast<uint32_t*>(dis_n) + coor_size * 4;
 
+      // Perform parallel computation along the channel dimension
       LITE_PARALLEL_BEGIN(j, tid, c) {
         int32_t* coor_ptr = coor_n;
         float* dis_ptr = dis_n;
         uint32_t* bound_ptr = bound_n;
         const float* in_c = in_n + j * spatial_size;
-        float* out_c = out_n + j * spatial_size;
-        for (int k = 0; k < spatial_size; k++) {
+        float* out_c = out_n + j * out_spatial_size;
+        for (int k = 0; k < out_spatial_size; k++) {
           int32x4_t vcoor = vld1q_s32(coor_ptr);
           float32x4_t vdis = vld1q_f32(dis_ptr);
           int32_t xw = vgetq_lane_s32(vcoor, 0);
