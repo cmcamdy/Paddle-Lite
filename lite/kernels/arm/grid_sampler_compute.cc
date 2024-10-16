@@ -42,10 +42,10 @@ void GridSamplerCompute::Run() {
   const float* grid = param.grid->data<float>();
   float* out = param.out->mutable_data<float>();
   auto& ctx = this->ctx_->template As<ARMContext>();
-  // First, we need to know how much space we need, 
-  //  which depends on the grid size  
+  // First, we need to know how much space we need,
+  //  which depends on the grid size
   const size_t coor_size = n * out_h * out_w;
-  // The space size required for coor_p, dis_p, and bound_p 
+  // The space size required for coor_p, dis_p, and bound_p
   const size_t workspace_size = coor_size * 4 * 3 * sizeof(float);
   memset(out, 0, param.out->numel() * sizeof(float));
 
@@ -282,7 +282,7 @@ void GridSamplerCompute::Run() {
       const float* in_n = in + i * cube_size;
       float* out_n = out + i * out_cube_size;
       int32_t* coor_n = ctx.workspace_data<int>() + i * out_spatial_size * 4;
-      // Based on the address of coor_n, skipping the space size of coor 
+      // Based on the address of coor_n, skipping the space size of coor
       //  gives the pointer address of dis_n, and similarly for bound_n
       float* dis_n = reinterpret_cast<float*>(coor_n) + coor_size * 4;
       uint32_t* bound_n = reinterpret_cast<uint32_t*>(dis_n) + coor_size * 4;
